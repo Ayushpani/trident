@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trident-cli"
+version = "0.1.0"
+description = "Unified developer tools platform: capture sessions, store as team memory, replay with or without AI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "shellstory",
+    "click>=8.1",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "aiofiles>=23.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+faiss = ["faiss-cpu", "sentence-transformers"]
+ollama = []   # no extra pip dep — calls Ollama HTTP API directly
+byok = ["anthropic", "openai"]
+postgres = ["psycopg2-binary", "pgvector"]
+mongo = ["pymongo"]
+mcp = ["fastmcp>=2.12"]
+all = [
+    "faiss-cpu",
+    "sentence-transformers",
+    "anthropic",
+    "openai",
+    "psycopg2-binary",
+    "pgvector",
+    "pymongo",
+    "fastmcp>=2.12",
+]
+
+[project.scripts]
+trident = "trident.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trident*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
