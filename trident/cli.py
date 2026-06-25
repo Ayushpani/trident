@@ -552,3 +552,39 @@ def export(
         from trident.connectors.notion import export_from_config as notion_export
         url = notion_export(runbook, config)
         console.print(f"[green]Exported to Notion:[/green] {url}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# trident ui
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@main.command("ui")
+def ui_cmd():
+    """Launch the interactive Bubble Tea TUI dashboard."""
+    import os
+    import shutil
+    import subprocess
+
+    # Search order: PATH → repo root (dev mode) → tui/trident-tui
+    binary = shutil.which("trident-tui")
+
+    if not binary:
+        here = Path(__file__).parent.parent
+        for candidate in [
+            here / "trident-tui",
+            here / "trident-tui.exe",
+            here / "tui" / "trident-tui",
+            here / "tui" / "trident-tui.exe",
+        ]:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                binary = str(candidate)
+                break
+
+    if not binary:
+        console.print("[red]trident-tui binary not found.[/red]")
+        console.print(
+            "[dim]Build it with:[/dim] [bold]cd tui && go build -o ../trident-tui .[/bold]"
+        )
+        sys.exit(1)
+
+    subprocess.run([binary])

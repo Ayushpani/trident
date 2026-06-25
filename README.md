@@ -7,6 +7,7 @@
 <br/><br/>
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Go](https://img.shields.io/badge/TUI-Go%20%2B%20Bubble%20Tea-00add8?style=for-the-badge&logo=go&logoColor=white)](tui/)
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-64%20passing-22c55e?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![Tier 0](https://img.shields.io/badge/Tier%200-No%20AI%20needed-7c3aed?style=for-the-badge)]()
@@ -305,6 +306,7 @@ pip install 'trident-cli[all]'       # everything
 | `trident mcp-serve` | Start MCP SSE server on port 9000 |
 | `trident export --obsidian <vault>` | Push runbook to Obsidian vault |
 | `trident export --notion` | Push runbook to Notion database |
+| `trident ui` | Launch the Bubble Tea TUI dashboard |
 
 ---
 
@@ -395,6 +397,91 @@ Add to `~/.claude/settings.json`:
 | `search_memory(query, k)` | Vector search across all runbooks |
 | `list_runbooks(limit)` | Metadata for all stored runbooks |
 | `trident://runbooks/<id>` | Full runbook content (MCP resource) |
+
+---
+
+## Interactive TUI
+
+`trident ui` launches a full-screen Bubble Tea dashboard — three views, keyboard-driven, zero mouse required.
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│  ⚡ TRIDENT   v0.1.0                                             │
+│  Terminal memory that works.                                      │
+│                                                                   │
+│ ╭───────────────────────────────────────────────────────────╮    │
+│ │  📋  Runbooks           12                                │    │
+│ │  🎯  Sessions            8                                │    │
+│ │  🗄   Memory        markdown                              │    │
+│ │  ✨  AI tier            none    Tier 0                    │    │
+│ ╰───────────────────────────────────────────────────────────╯    │
+│                                                                   │
+│  Recent runbooks                                                  │
+│  ▸ deploy-auth-service      2 steps  · just now                  │
+│    setup-k8s-cluster        5 steps  · 2h ago                    │
+│    install-postgres         3 steps  · 1d ago                    │
+│                                                                   │
+│  enter/r  browse runbooks      q  quit                           │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**Runbook browser** (40/60 split — navigate left, live preview right):
+
+```
+╭─ Runbooks (12) ──────╮ ╭─ Preview ──────────────────────────────╮
+│  ▸ deploy-auth-ser.. │ │  deploy-auth-service                   │
+│    setup-k8s-cluster │ │  ac06a4b3 · 2 steps · just now         │
+│    install-postgres  │ │  ──────────────────────────────────    │
+│    configure-nginx   │ │  # deploy-auth-service                 │
+│    migrate-db        │ │                                        │
+│    setup-monitoring  │ │  > Runbook · Tier 0 · 2026-06-25      │
+│    deploy-frontend   │ │                                        │
+│                      │ │  ## Variables                          │
+│                      │ │  DATABASE_URL → export DATABASE_URL=.. │
+│    / filter          │ │                                        │
+│    enter open        │ │  ··· (enter to view full runbook)      │
+╰──────────────────────╯ ╰────────────────────────────────────────╯
+  ↑↓/jk navigate   / filter   enter open   esc/h back   q quit
+```
+
+**Full viewer** — glamour-rendered Markdown with scroll tracking:
+
+```
+⚡ deploy-auth-service                                    72%  ████████░░░░░░░░
+────────────────────────────────────────────────────────────────────────────────
+  # deploy-auth-service
+
+  > Runbook · Session ac06a4b3 · 2026-06-25 18:06 UTC · Tier 0
+
+  ## Steps
+
+  ### Step 1: Commands in app
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  npm install && \                                            │
+  │    npm run build && \                                        │
+  │    docker build -t myapp:latest . && \                       │
+  │    docker push registry.io/myapp:latest                      │
+  └──────────────────────────────────────────────────────────────┘
+────────────────────────────────────────────────────────────────────────────────
+  ↑↓  scroll    g/G  top/bottom    esc/h  back    q  quit
+```
+
+### Build and install
+
+```bash
+# Requires Go 1.22+
+cd tui && go mod tidy && go build -o ../trident-tui .
+
+# Or with make:
+make build
+
+# Install to ~/.local/bin (must be in PATH):
+make install
+
+# Then launch:
+trident ui
+```
 
 ---
 

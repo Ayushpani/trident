@@ -31,3 +31,10 @@ shellstory-main/
 ks-ai-main/
 smaran-main/
 *.zip
+
+# Compiled TUI binary
+trident-tui
+trident-tui.exe
+
+# Go build cache (inside tui/)
+tui/go.sum
