@@ -141,6 +141,231 @@ def _slugify(text: str) -> str:
 
 
 def _chunks_to_markdown(chunks: list[dict], metadata: dict) -> str:
+    """
+    Render a runbook as polished, corporate-ready Markdown.
+
+    Uses the full Runbook dict from metadata["runbook"] when available
+    (passed by cli.py process).  Falls back to chunk text for backward compat.
+    """
+    runbook_data = metadata.get("runbook")
+    if runbook_data:
+        return _render_from_runbook(runbook_data, metadata)
+    return _render_from_chunks(chunks, metadata)
+
+
+def _render_from_runbook(rb: dict, metadata: dict) -> str:
+    title = rb.get("title", "Runbook")
+    session_id = metadata.get("session_id", "")
+    created_at = metadata.get("created_at", datetime.now(timezone.utc).isoformat())
+    tier = metadata.get("tier", "none")
+    steps = rb.get("steps", [])
+    variables = rb.get("variables", [])
+    prerequisites = rb.get("prerequisites", [])
+    errors_and_fixes = rb.get("errors_and_fixes", [])
+    description = rb.get("description", "")
+
+    # Human-readable timestamp
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        ts = dt.strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        ts = created_at[:16]
+
+    short_session = session_id[:8] if session_id else "unknown"
+    tier_label = {
+        "none": "Tier 0 — deterministic (no AI)",
+        "local": "Tier 1 — local Ollama",
+        "byok": "Tier 2 — BYOK (5-agent swarm)",
+        "smaran": "Tier 3 — Smaran managed memory",
+    }.get(tier, tier)
+
+    L = []
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    L += [
+        f"# {title}",
+        "",
+        f"> **Runbook** · Session `{short_session}` · {ts} · {tier_label}",
+        "",
+        "---",
+        "",
+    ]
+
+    # ── Table of contents ─────────────────────────────────────────────────────
+    L += ["## Table of Contents", ""]
+    L.append("1. [Overview](#overview)")
+    if prerequisites:
+        L.append("2. [Prerequisites](#prerequisites)")
+    if variables:
+        L.append(f"{'3' if prerequisites else '2'}. [Variables](#variables)")
+    step_idx = (2 + bool(prerequisites) + bool(variables)) + 1
+    L.append(f"{step_idx - 1}. [Steps](#steps)")
+    for s in steps:
+        anchor = re.sub(r"[^\w\s-]", "", s.get("title", "").lower())
+        anchor = re.sub(r"[\s]+", "-", anchor.strip())
+        num = s.get("step_number", "?")
+        L.append(f"   - [Step {num}: {s.get('title','')}](#{num}-{anchor})")
+    if errors_and_fixes:
+        L.append(f"{step_idx}. [Troubleshooting](#troubleshooting)")
+    L += ["", "---", ""]
+
+    # ── Overview ──────────────────────────────────────────────────────────────
+    L += ["## Overview", ""]
+    if description and "no signal commands" not in description.lower():
+        L += [description, ""]
+
+    L += [
+        "| Field | Value |",
+        "|-------|-------|",
+        f"| Session ID | `{session_id}` |",
+        f"| Generated | {ts} |",
+        f"| Synthesis | {tier_label} |",
+        f"| Steps | {len(steps)} |",
+        f"| Variables | {len(variables)} |",
+        "",
+        "---",
+        "",
+    ]
+
+    # ── Prerequisites ─────────────────────────────────────────────────────────
+    if prerequisites:
+        L += [
+            "## Prerequisites",
+            "",
+            "> Ensure the following are in place before starting.",
+            "",
+        ]
+        for p in prerequisites:
+            if isinstance(p, dict):
+                name = p.get("name", str(p))
+                ptype = p.get("type", "")
+                check = p.get("how_to_check", "")
+                install = p.get("how_to_install", "")
+                version = p.get("version_constraint", "")
+                label = f"**{name}**" + (f" `[{ptype}]`" if ptype else "")
+                if version:
+                    label += f" — version `{version}`"
+                L.append(f"- {label}")
+                if check:
+                    L.append(f"  - Verify: `{check}`")
+                if install:
+                    L.append(f"  - Install: `{install}`")
+            else:
+                L.append(f"- {p}")
+        L += ["", "---", ""]
+
+    # ── Variables ─────────────────────────────────────────────────────────────
+    if variables:
+        L += [
+            "## Variables",
+            "",
+            "Set these before running the steps below.",
+            "",
+            "| Variable | How to set | Source |",
+            "|----------|-----------|--------|",
+        ]
+        for v in variables:
+            name = v.get("variable_name", v.get("name", ""))
+            how = v.get("how_to_set", "")
+            source = v.get("original_pattern", "")
+            L.append(f"| `{name}` | `{how}` | {source} |")
+        L += ["", "---", ""]
+
+    # ── Steps ─────────────────────────────────────────────────────────────────
+    L += ["## Steps", ""]
+
+    for s in steps:
+        num = s.get("step_number", "?")
+        step_title = s.get("title", f"Step {num}")
+        command = s.get("command", "")
+        explanation = s.get("explanation", "")
+        expected_output = s.get("expected_output", "")
+        warning = s.get("warning", "")
+        retry_note = s.get("retry_note", "")
+
+        # Anchor-safe heading (GitHub Markdown)
+        L.append(f"### Step {num}: {step_title}")
+        L.append("")
+
+        if command:
+            # Format multi-command chains as one command per line
+            clean_cmd = _format_command(command)
+            L += ["```bash", clean_cmd, "```", ""]
+
+        if explanation:
+            L += [f"**What this does:** {explanation}", ""]
+
+        if expected_output:
+            L += [
+                "<details>",
+                "<summary>Expected output</summary>",
+                "",
+                "```",
+                expected_output,
+                "```",
+                "",
+                "</details>",
+                "",
+            ]
+
+        if warning:
+            L += [f"> ⚠️ **Warning:** {warning}", ""]
+
+        if retry_note:
+            L += [f"> 🔄 **If this fails:** {retry_note}", ""]
+
+        L += ["---", ""]
+
+    # ── Errors and fixes ──────────────────────────────────────────────────────
+    if errors_and_fixes:
+        L += [
+            "## Troubleshooting",
+            "",
+            "These error→fix pairs were observed during the original session.",
+            "",
+        ]
+        for ef in errors_and_fixes:
+            if isinstance(ef, dict):
+                failed = ef.get("failed_command", "")
+                fix = ef.get("final_fix", "")
+                lesson = ef.get("lesson", "")
+                L.append(f"- **Failed:** `{failed}`")
+                if fix:
+                    L.append(f"  - **Fix:** `{fix}`")
+                if lesson:
+                    L.append(f"  - **Lesson:** {lesson}")
+            else:
+                L.append(f"- {ef}")
+        L += ["", "---", ""]
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    L += [
+        "",
+        "*Generated by [Trident](https://github.com/ayush/trident) · "
+        f"{tier_label} · Replay with `trident run`*",
+    ]
+
+    return "\n".join(L)
+
+
+def _format_command(cmd: str) -> str:
+    """Return command ready for a bash code block."""
+    # Synthesizer already formats multi-command chains with && \<newline> — keep as-is
+    if "\n" in cmd:
+        return cmd
+    # Single-line multi-command: split and indent for readability
+    parts = [p.strip() for p in cmd.split("&&")]
+    if len(parts) == 1:
+        return cmd
+    out = [parts[0] + " && \\"]
+    for p in parts[1:-1]:
+        out.append("  " + p + " && \\")
+    out.append("  " + parts[-1])
+    return "\n".join(out)
+
+
+def _render_from_chunks(chunks: list[dict], metadata: dict) -> str:
+    """Backward-compat fallback when no Runbook dict is in metadata."""
     title = metadata.get("title", "Runbook")
     session_id = metadata.get("session_id", "")
     created_at = metadata.get("created_at", datetime.now(timezone.utc).isoformat())
@@ -152,18 +377,10 @@ def _chunks_to_markdown(chunks: list[dict], metadata: dict) -> str:
         f"- **Tier**: {metadata.get('tier', 'none')} (deterministic)",
         "",
     ]
-
     for chunk in chunks:
         if chunk.get("type") == "overview":
-            lines.append("## Overview")
-            lines.append("")
-            lines.append(chunk["text"])
-            lines.append("")
+            lines += ["## Overview", "", chunk["text"], ""]
         elif chunk.get("type") == "step":
             step_num = chunk.get("step_number", "?")
-            lines.append(f"## Step {step_num}: {chunk['title']}")
-            lines.append("")
-            lines.append(chunk["text"])
-            lines.append("")
-
+            lines += [f"## Step {step_num}: {chunk['title']}", "", chunk["text"], ""]
     return "\n".join(lines)

@@ -276,6 +276,7 @@ def process(session_id: Optional[str]) -> None:
         "runbook_id": runbook.id,
         "tier": tier,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "runbook": runbook.model_dump(),  # full structured data for rich rendering
     }
     store_id = memory_store.write(chunks, metadata)
 

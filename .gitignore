@@ -25,3 +25,9 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Vendor source trees (install locally with pip install -e)
+shellstory-main/
+ks-ai-main/
+smaran-main/
+*.zip

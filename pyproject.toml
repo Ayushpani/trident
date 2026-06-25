@@ -5,10 +5,31 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trident-cli"
 version = "0.1.0"
-description = "Unified developer tools platform: capture sessions, store as team memory, replay with or without AI"
+description = "Capture terminal sessions · synthesize runbooks · store as team memory · replay anywhere"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [{ name = "Ayush Panigrahi", email = "ayushpanigrahi84@gmail.com" }]
+keywords = [
+    "devops", "runbook", "terminal", "cli", "memory", "mcp",
+    "shellstory", "ksai", "smaran", "k8s", "kubernetes",
+    "llm", "ai", "automation", "replay",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: System :: Shells",
+    "Topic :: Utilities",
+]
 dependencies = [
     "shellstory",
     "click>=8.1",
