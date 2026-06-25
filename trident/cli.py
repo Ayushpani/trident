@@ -2,14 +2,16 @@
 trident.cli — Click-based CLI entry point.
 
 Commands:
-  trident init    — interactive wizard, writes ~/.trident/config.yaml
-  trident start   — begin a capture session
-  trident stop    — manually stop the active session
-  trident process — synthesize a runbook from the last (or named) session
-  trident query   — search the memory store
-  trident run     — mechanical replay of a runbook
-  trident list    — list sessions and runbooks
-  trident status  — show active session and event count
+  trident init       — interactive wizard, writes ~/.trident/config.yaml
+  trident start      — begin a capture session
+  trident stop       — manually stop the active session
+  trident process    — synthesize a runbook from the last (or named) session
+  trident query      — search the memory store
+  trident run        — mechanical replay of a runbook
+  trident list       — list sessions and runbooks
+  trident status     — show active session and event count
+  trident mcp-serve  — expose memory as MCP server (Phase 8)
+  trident export     — push runbook to Obsidian or Notion (Phase 9)
 """
 
 from __future__ import annotations
@@ -429,14 +431,21 @@ def list_cmd(limit: int) -> None:
 
 
 @main.command()
-def status() -> None:
+@click.option("--watch", is_flag=True, default=False, help="Live-updating dashboard.")
+def status(watch: bool) -> None:
     """Show active session and event count."""
     from trident.config import load_config, db_path
     from trident.capture.adapter import Database
     from trident.capture.ndjson import event_count
     from pathlib import Path
 
-    load_config()
+    config = load_config()
+
+    if watch:
+        from trident.ui.dashboard import launch
+        launch(config)
+        return
+
     db = Database(db_path())
     try:
         session = db.get_active_session()
@@ -460,3 +469,85 @@ def status() -> None:
     console.print(
         f"\n  Run [bold]trident process[/bold] when done to generate a runbook.\n"
     )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# trident mcp-serve
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@main.command("mcp-serve")
+@click.option("--port", default=9000, show_default=True, help="Port to bind.")
+@click.option("--host", default="localhost", show_default=True, help="Host to bind.")
+def mcp_serve(port: int, host: str) -> None:
+    """Expose Trident memory as an MCP server (for Claude Code, Cursor, etc.)."""
+    from trident.config import load_config
+    from trident.execute.mcp_bridge import serve
+
+    config = load_config()
+    config.setdefault("mcp_bridge", {})
+    config["mcp_bridge"]["port"] = port
+    config["mcp_bridge"]["host"] = host
+
+    console.print(
+        f"\n[bold cyan]Trident MCP bridge[/bold cyan] starting on {host}:{port}\n"
+        f"  Connect: http://{host}:{port}/sse\n"
+        f"  Tools:   search_memory, list_runbooks, get_runbook\n"
+        f"\nPress Ctrl+C to stop.\n"
+    )
+    serve(config)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# trident export
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@main.command()
+@click.option("--obsidian", "vault_path", default=None, help="Obsidian vault path.")
+@click.option("--subfolder", default="runbooks", show_default=True, help="Subfolder within vault.")
+@click.option("--notion", "to_notion", is_flag=True, default=False, help="Export to Notion.")
+@click.option("--runbook-id", default=None, help="Runbook ID (defaults to most recent).")
+def export(
+    vault_path: Optional[str],
+    subfolder: str,
+    to_notion: bool,
+    runbook_id: Optional[str],
+) -> None:
+    """Export a runbook to Obsidian or Notion."""
+    from trident.config import load_config, db_path
+    from trident.capture.adapter import Database
+
+    if not vault_path and not to_notion:
+        console.print("[red]Specify --obsidian <vault-path> or --notion[/red]")
+        sys.exit(1)
+
+    config = load_config()
+    db = Database(db_path())
+    try:
+        if runbook_id:
+            runbook = db.get_runbook(runbook_id)
+        else:
+            sessions = db.list_sessions(limit=10)
+            runbook = None
+            for sess in sessions:
+                if sess.runbook_id:
+                    runbook = db.get_runbook(sess.runbook_id)
+                    if runbook:
+                        break
+    finally:
+        db.close()
+
+    if not runbook:
+        console.print("[red]No runbook found. Run 'trident process' first.[/red]")
+        sys.exit(1)
+
+    if vault_path:
+        from trident.connectors.obsidian import export as obs_export
+        out = obs_export(runbook, vault_path, subfolder)
+        console.print(f"[green]Exported to Obsidian:[/green] {out}")
+
+    if to_notion:
+        from trident.connectors.notion import export_from_config as notion_export
+        url = notion_export(runbook, config)
+        console.print(f"[green]Exported to Notion:[/green] {url}")
