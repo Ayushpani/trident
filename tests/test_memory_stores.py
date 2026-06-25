@@ -184,3 +184,96 @@ def test_empty_store_list_returns_empty(tmp_path):
     _patch_store_dir(store, tmp_path)
 
     assert store.list() == []
+
+
+# ── FAISSStore (TF-IDF fallback, no sentence-transformers required) ───────────
+
+
+def _make_faiss_config(tmp_path: Path) -> dict:
+    return {
+        "memory": {
+            "primary": "faiss",
+            "faiss": {"path": str(tmp_path / "faiss")},
+        },
+        "ai_tier": "none",
+    }
+
+
+@pytest.fixture()
+def faiss_store(tmp_path, monkeypatch):
+    """FAISSStore forced to TF-IDF backend — no subprocess probe, no torch."""
+    import trident.memory.faiss_store as fs_mod
+
+    monkeypatch.setattr(fs_mod, "_sentence_transformers_safe", lambda: False)
+    # Reset cached value so the monkeypatch takes effect.
+    monkeypatch.setattr(fs_mod, "_ST_SAFE", None)
+
+    from trident.memory.faiss_store import FAISSStore
+
+    return FAISSStore(_make_faiss_config(tmp_path))
+
+
+def test_faiss_empty_query_returns_empty(faiss_store):
+    assert faiss_store.query("deploy auth") == []
+
+
+def test_faiss_empty_list_returns_empty(faiss_store):
+    assert faiss_store.list() == []
+
+
+def test_faiss_write_returns_store_id(faiss_store):
+    sid = faiss_store.write(_sample_chunks(), _sample_metadata())
+    assert isinstance(sid, str) and len(sid) == 36  # UUID
+
+
+def test_faiss_write_populates_index(faiss_store):
+    faiss_store.write(_sample_chunks(), _sample_metadata())
+    assert faiss_store._index.ntotal == 3  # 3 chunks
+
+
+def test_faiss_query_returns_results_after_write(faiss_store):
+    faiss_store.write(_sample_chunks("Deploy Auth"), _sample_metadata("Deploy Auth"))
+    results = faiss_store.query("docker deploy", k=3)
+    assert len(results) >= 1
+    assert all("text" in r for r in results)
+
+
+def test_faiss_query_score_in_range(faiss_store):
+    faiss_store.write(_sample_chunks(), _sample_metadata())
+    results = faiss_store.query("auth", k=3)
+    for r in results:
+        assert 0.0 < r["score"] <= 1.0
+
+
+def test_faiss_list_after_two_writes(faiss_store):
+    faiss_store.write(_sample_chunks("Auth"), _sample_metadata("Auth"))
+    faiss_store.write(_sample_chunks("Database"), _sample_metadata("Database"))
+    entries = faiss_store.list()
+    assert len(entries) == 2
+    titles = {e["title"] for e in entries}
+    assert "Auth" in titles and "Database" in titles
+
+
+def test_faiss_persistence(tmp_path, monkeypatch):
+    """Index and metadata survive a reload from disk; TF-IDF is refitted on load."""
+    import trident.memory.faiss_store as fs_mod
+
+    monkeypatch.setattr(fs_mod, "_sentence_transformers_safe", lambda: False)
+    monkeypatch.setattr(fs_mod, "_ST_SAFE", None)
+
+    from trident.memory.faiss_store import FAISSStore
+
+    cfg = _make_faiss_config(tmp_path)
+
+    store1 = FAISSStore(cfg)
+    store1.write(_sample_chunks("Persist Test"), _sample_metadata("Persist Test"))
+    # store1._save() is called by write(); explicitly saving again is harmless
+    store1._save()
+
+    # Fresh instance — loads index from disk and refits TF-IDF from stored meta.
+    monkeypatch.setattr(fs_mod, "_ST_SAFE", None)
+    store2 = FAISSStore(cfg)
+
+    assert store2._index.ntotal == 3
+    results = store2.query("persist", k=3)
+    assert len(results) >= 1
